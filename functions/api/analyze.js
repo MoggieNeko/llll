@@ -1,67 +1,73 @@
-import {
-  json, fetchPage, parseMeta, enrichWithThumbnailColor,
-  scoreItem, filterItem, inferPlatform, detectLanguage
-} from './_lib.js';
+import { json, fetchPage, parseMeta, tryOEmbed, enrichWithThumbnailColor, scoreItem, filterItem, inferPlatform, detectLanguage, cleanText } from './_lib.js';
 
 export const onRequestOptions = () => json({ ok: true });
 
 export async function onRequestPost(context) {
   try {
     const payload = await context.request.json();
-    const urls = Array.isArray(payload.urls) ? payload.urls : [];
+    const urls = Array.isArray(payload.urls) ? payload.urls.slice(0, 100) : [];
     if (!urls.length) return json({ error: 'Missing urls' }, 400);
 
     const filters = {
-      query: '',
-      platforms: [],
+      query: payload.query || '',
       language: payload.language || 'all',
       color: payload.color || '',
-      products: payload.products || ''
+      products: payload.products || '',
+      strictMode: Boolean(payload.strictMode),
+      preferYoutube: true
     };
 
-    const analyzed = [];
-    const debug = {
-      rawResults: urls.length,
-      fetchedOk: 0,
-      fallbackUsed: 0,
-      filteredOut: 0,
-      finalCount: 0
-    };
+    const results = [];
+    const debug = { mode: 'analyze-urls', inputUrls: urls.length, oembedHits: 0, pageFetchHits: 0, fallbacks: 0, filteredOut: 0 };
 
-    for (const url of urls.slice(0, 100)) {
-      let parsed = null;
-      try {
-        const html = await fetchPage(url);
-        parsed = parseMeta(html, url);
-        debug.fetchedOk += 1;
-      } catch {
-        parsed = {
-          platform: inferPlatform(url),
-          url,
-          title: '',
-          description: '',
-          snippet: '',
-          thumbnailUrl: '',
-          detectedLanguage: 'unknown',
-          dominantColorName: 'unknown',
-          matchedProducts: [],
-          intro: '',
-          source: 'url-fallback'
-        };
-        debug.fallbackUsed += 1;
+    for (const url of urls) {
+      let item = {
+        platform: inferPlatform(url),
+        url,
+        title: '',
+        description: '',
+        snippet: '',
+        thumbnailUrl: '',
+        detectedLanguage: 'unknown',
+        dominantColorName: 'unknown',
+        intro: '',
+        matchedProducts: [],
+        matchReasons: []
+      };
+
+      const oembed = await tryOEmbed(url);
+      if (oembed) {
+        item.title = oembed.title || item.title;
+        item.thumbnailUrl = oembed.thumbnailUrl || item.thumbnailUrl;
+        item.authorName = oembed.authorName || '';
+        item.providerName = oembed.providerName || '';
+        item.description = cleanText(`${oembed.authorName || ''} ${oembed.providerName || ''}`);
+        item.snippet = item.description;
+        item.detectedLanguage = detectLanguage(`${item.title} ${item.description}`);
+        item.intro = cleanText(`${item.title} ${item.description}`).slice(0, 220);
+        debug.oembedHits += 1;
       }
 
-      parsed = scoreItem(parsed, filters);
-      parsed = await enrichWithThumbnailColor(parsed);
-      parsed = scoreItem(parsed, filters);
+      if (!item.title || !item.thumbnailUrl) {
+        try {
+          const html = await fetchPage(url);
+          const parsed = parseMeta(html, url);
+          item = { ...item, ...parsed, title: item.title || parsed.title, thumbnailUrl: item.thumbnailUrl || parsed.thumbnailUrl };
+          item.intro = cleanText(item.description || item.snippet || item.title).slice(0, 220);
+          debug.pageFetchHits += 1;
+        } catch {
+          debug.fallbacks += 1;
+        }
+      }
 
-      if (filterItem(parsed, filters)) analyzed.push(parsed);
+      item = await enrichWithThumbnailColor(item);
+      item = scoreItem(item, filters);
+      if (filterItem(item, filters)) results.push(item);
       else debug.filteredOut += 1;
     }
 
-    analyzed.sort((a, b) => (b.score || 0) - (a.score || 0));
-    debug.finalCount = analyzed.length;
-    return json({ results: analyzed, debug });
+    results.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return json({ results, debug });
   } catch (error) {
     return json({ error: String(error?.message || error) }, 500);
   }

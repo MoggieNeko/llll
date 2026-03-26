@@ -1,201 +1,108 @@
-# 社交平台影片搜尋器 Web 版
+# 社交平台影片搜尋器 Web V2（較準確、較穩定版）
 
-這個版本已經由 **本機版** 改成 **可上網站架設** 的版本。
+這一版是針對上一版兩個結構性問題重做：
 
-## 適合你現在的需求
+1. **搜尋不精準**：原本主要靠公開搜尋引擎 + 抓頁面 metadata，相關度不足。
+2. **要開 VPN 才較容易有結果**：原本流程依賴匿名抓取公開搜尋頁與社交平台頁面，容易被限制或回傳不完整資料。
 
-- 不用本地長期開住電腦
-- 可部署成真正網站
-- 免費起步
-- 介面簡單，適合不太熟電腦的人
-- 主要支援 Instagram 相關搜尋流程
-- 亦可分析 TikTok / YouTube / Facebook / X 的公開影片頁面
+所以 V2 改成 **兩條主線**：
 
-## 這個版本的部署方式
+- **YouTube 精準搜尋**：使用 YouTube Data API（免費配額）做真正搜尋，再由本工具做二次篩選和排序。
+- **Instagram / TikTok / Facebook / X 較穩定工作流**：不再假裝可以「匿名全網精準搜」。改為 **瀏覽器收集器** 在使用者自己瀏覽平台時收集當前頁面可見影片網址，再交給網站做分析與排序。
 
-### 推薦：Cloudflare Pages + Functions
+## 這版能解決什麼
 
-原因：
+- 不再把不穩定的匿名抓取當核心搜尋來源
+- 不再因為語言 / 顏色 / 產品條件過嚴而全部 0 結果
+- 提供 **軟性排序** 與 **嚴格模式** 切換
+- 讓結果有「為什麼排前」的說明
+- 盡量避免因後端 IP 被限制而必須開 VPN
 
-1. 前端可以直接放在 Pages
-2. 搜尋與 metadata 抓取可以放在 Functions
-3. 免費方案可用 Workers / Pages Functions
-4. 有 HTTPS、全球 CDN，部署簡單
-5. 可直接接 GitHub，自動上線
+## 核心限制（請先看）
 
-## 專案結構
+### 1) YouTube 可以做精準搜尋
+因為可以接正式搜尋 API，再用本工具做細篩選。
 
-```text
-social_video_finder_web_v1/
-├─ public/
-│  ├─ index.html
-│  ├─ styles.css
-│  └─ app.js
-├─ functions/
-│  └─ api/
-│     ├─ _lib.js
-│     ├─ search.js
-│     └─ analyze.js
-├─ package.json
-├─ wrangler.toml
-└─ README.md
-```
+### 2) Instagram / TikTok / Facebook / X 無法保證匿名全網精準搜尋
+這不是程式小修可以解決的問題。若不使用官方 API、登入授權、付費資料源，或在使用者自己的瀏覽器中收集頁面內容，網站後端很難穩定、合法、精準地替你匿名全網搜尋影片。
 
-## 主要功能
+因此這版把它改成：
+- 用戶先在平台上正常搜尋 / Explore / Hashtag / Reels 頁面中打開結果
+- 按 bookmarklet 收集當前頁面可見網址
+- 把網址貼回本網站分析
 
-### 1. 網站搜尋模式
-- 輸入主題關鍵字
-- 選平台
-- 選語言
-- 選背景主色
-- 選產品關鍵字
-- 搜尋公開影片頁面
-- 列出網址、簡介、縮圖、分數
+這樣通常比「匿名後端代你爬」穩定得多。
 
-### 2. 批量網址分析
-- 可直接貼 Reel / Shorts / TikTok 連結
-- 可上傳 TXT / CSV / JSON
-- 統一分析 metadata
-- 做語言、顏色、產品篩選
+## 功能
 
-### 3. 匯出
-- CSV
-- JSON
-- HTML 報告
-- 複製全部網址
+### 模式 A：YouTube 搜尋（推薦）
+- 關鍵字搜尋
+- 語言、顏色、產品字眼、平台加權
+- 軟性排序 / 嚴格篩選
+- 支援將 YouTube API Key 放在 Cloudflare 環境變數 `YOUTUBE_API_KEY`
+- 也支援前端臨時輸入 API Key（只存在瀏覽器，不會儲存在後端）
 
-## 架設方法（最簡單，唔用 Wrangler）
+### 模式 B：網址分析（推薦給 IG / TikTok）
+- 貼上影片網址清單
+- 分析標題、描述、縮圖、語言、關鍵字匹配
+- 顯示匹配原因與分數
 
-### 方法 A：Cloudflare Dashboard + GitHub
+### 模式 C：瀏覽器收集器
+- 在 IG / TikTok / YouTube / Facebook / X 頁面按 bookmarklet
+- 把當前頁面可見影片 / post / reel 連結複製到剪貼簿
+- 貼回本網站分析
 
-1. 把整個專案上傳到 GitHub repository
-2. 到 Cloudflare Dashboard
-3. 進入 **Workers & Pages**
-4. 點 **Create application**
-5. 選 **Pages**
-6. 連接 GitHub repository
-7. Build settings 填：
-   - **Framework preset**: None
-   - **Build command**: 留空
-   - **Build output directory**: `public`
-8. 完成部署
+## Cloudflare Pages 部署
 
-Cloudflare 會自動識別 `functions/` 目錄，將裡面的 API 當成 Pages Functions。
+### 結構
+- `public/`：前端網站
+- `functions/`：Cloudflare Pages Functions API
 
-## 架設方法（CLI）
+### 建議設定
+- Framework preset: `None`
+- Build command: `exit 0`
+- Build output directory: `public`
 
-### 先安裝 Node.js
+## 環境變數
 
-下載並安裝 Node.js LTS。
+### 可選：YouTube API Key
+在 Cloudflare Pages / Workers Settings 加：
+- `YOUTUBE_API_KEY` = 你的 YouTube Data API key
 
-### 安裝 Wrangler
+如果未設定，前端也可以讓使用者暫時輸入 key。
 
-```bash
-npm install
-npm install -g wrangler
-```
+## 使用流程
 
-### 登入 Cloudflare
+### YouTube 搜尋
+1. 輸入主題，例如 `coffee review`
+2. 選語言 / 顏色 / 產品字眼
+3. 按「YouTube 搜尋」
+4. 看排序結果
+5. 匯出 CSV / HTML
 
-```bash
-wrangler login
-```
+### Instagram / TikTok
+1. 自己到平台內搜尋，例如 `latte art`
+2. 開到搜尋結果頁 / reel 列表 / hashtag 頁
+3. 點 browser_helper 裡的 bookmarklet
+4. 複製網址清單
+5. 回到本網站貼上
+6. 按「分析網址」
 
-### 本地預覽
+## 這版比上一版準在哪裡
 
-```bash
-npx wrangler pages dev public
-```
+- 搜尋來源更明確：YouTube 走正式 API，不再盲抓搜尋頁。
+- IG / TikTok 不再用不穩定的匿名後端全網爬法。
+- 排名改成「相關度 + 語言 + 產品 + 顏色 + metadata 完整度」綜合分數。
+- 除了分數，還會顯示 `matchReasons` 告訴你為什麼它被排前。
+- 新增嚴格模式開關。平時建議關閉，先看更多候選結果。
 
-### 部署
+## 下一步可再升級
 
-```bash
-npx wrangler pages deploy public
-```
+### 真 AI 版
+如你真的要按「影片中的產品、背景顏色、說話語言」做更準確搜尋，下一步應加：
+- 逐幀抽樣
+- 本機或雲端物件辨識
+- 語音轉文字
+- 顏色佔比分析
 
-## 若你之前出現 `'wrangler' 不是內部或外部命令`
-
-代表你的電腦未安裝 Wrangler，或未加到 PATH。
-
-你有兩個做法：
-
-### 做法 1：直接用 Dashboard + GitHub
-這個最適合你，基本上不用碰命令列。
-
-### 做法 2：用 npx 直接跑
-```bash
-npx wrangler pages dev public
-```
-
-這樣即使全域未安裝，也通常可以直接執行。
-
-## 注意事項
-
-1. 這個工具依賴公開可索引頁面，不代表平台內所有影片都能抓到。
-2. Instagram / TikTok 有時會阻擋頁面資料，所以有些影片只能抓到部分 metadata。
-3. 背景色目前仍然是依據縮圖資料估算，不是完整逐幀影片分析。
-4. 產品辨識目前仍以文字關鍵字為主，不是正式的 AI 物件辨識。
-5. 語言判斷目前以標題與描述為主，不是語音辨識。
-
-## 下一步可以再升級什麼
-
-### 升級 1：真正 AI 物件辨識
-- 用後端模型辨識產品
-- 例如咖啡機、護膚品、化妝品、鞋、袋
-
-### 升級 2：Whisper 語音轉文字
-- 抽音訊
-- 判斷真實語言
-- 再做關鍵字檢索
-
-### 升級 3：登入後收藏與專案管理
-- 用 Cloudflare D1 / KV
-- 每個使用者可保存結果
-
-### 升級 4：IG 專用收集器
-- 做 Chrome Extension
-- 在頁面一鍵收集 Reel URL
-- 再送回網站分析
-
-## 最重要結論
-
-如果你要：
-
-- **真正放上網站**
-- **不用本機運行**
-- **免費開始**
-- **介面簡單**
-
-那這個版本應該用 **Cloudflare Pages + Functions**，而不是 GitHub Pages 單獨部署。
-
-
-## 已修正：搜尋不到結果的常見原因
-
-這個修正版已針對網站版做了幾個關鍵修正：
-
-1. **Instagram / TikTok 頁面抓取失敗時不再直接丟棄結果**  
-   會退回使用搜尋引擎的標題和摘要先做分析，所以不會出現「明明搜尋到網址，但畫面 0 結果」。
-
-2. **平台查詢改成逐條 site: 查詢**  
-   例如 Instagram 會分開查 `site:instagram.com/reel/` 與 `site:instagram.com/p/`，比原本的 OR 寫法更穩。
-
-3. **顏色 / 產品過濾改為較寬鬆**  
-   如果公開頁面本身拿不到縮圖顏色，會保留結果而不是直接全刪。
-
-4. **加入 debug 狀態**
-   搜尋完成後狀態列會顯示：
-   - 原始找到多少條
-   - 成功抓到頁面多少條
-   - 有多少條用了備援資料
-
-### 測試建議
-
-第一次請先用最寬鬆條件測：
-
-- 關鍵字：`coffee review`
-- 平台：先選 YouTube 或 Instagram
-- 語言：全部
-- 顏色：留空
-- 產品：留空
-
-如果有結果，再慢慢加條件。
+沒有這些，任何只靠標題 / 描述 / 縮圖的網站版都只能算候選篩選器，不是最終精準檢索器。

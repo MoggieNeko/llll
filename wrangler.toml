@@ -1,3 +1,2 @@
-name = "social-video-finder-web"
-compatibility_date = "2026-03-26"
-pages_build_output_dir = "public"
+name = "social-video-finder-web-v2"
+compatibility_date = "2025-01-01"
