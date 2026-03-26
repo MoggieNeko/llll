@@ -230,11 +230,12 @@ async function runSearch() {
     state.lastPayload = payload;
     renderResults(state.results);
     updateSummary(state.results);
-    setStatus(`完成，共 ${state.results.length} 個結果`);
+    const extra = data.debug ? `；原始 ${data.debug.rawResults}，成功抓頁 ${data.debug.fetchedOk}，備援 ${data.debug.fallbackUsed}` : "";
+    setStatus(`完成，共 ${state.results.length} 個結果${extra}`);
   } catch (err) {
     console.error(err);
     setStatus("搜尋失敗");
-    alert("搜尋失敗，請稍後再試");
+    alert(`搜尋失敗：${err.message || err}`);
   }
 }
 
@@ -257,7 +258,8 @@ async function analyzeUrls() {
     state.lastPayload = payload;
     renderResults(state.results);
     updateSummary(state.results);
-    setStatus(`完成，共 ${state.results.length} 個結果`);
+    const extra = data.debug ? `；原始 ${data.debug.rawResults}，成功抓頁 ${data.debug.fetchedOk}，備援 ${data.debug.fallbackUsed}` : "";
+    setStatus(`完成，共 ${state.results.length} 個結果${extra}`);
   } catch (err) {
     console.error(err);
     setStatus("分析失敗");

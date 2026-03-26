@@ -197,10 +197,16 @@ function scoreItem(item, filters) {
 
 function filterItem(item, filters) {
   if (filters.platforms?.length && !filters.platforms.includes(item.platform)) return false;
-  if (filters.language && filters.language !== "all" && item.detectedLanguage !== filters.language) return false;
-  if (filters.color && item.dominantColorName !== filters.color) return false;
+  if (filters.language && filters.language !== "all" && item.detectedLanguage !== "unknown" && item.detectedLanguage !== filters.language) return false;
+
+  // 顏色與產品在公開頁面常常拿不到完整資料，所以遇到 unknown 時不要直接剔除
+  if (filters.color && item.dominantColorName !== "unknown" && item.dominantColorName !== filters.color) return false;
+
   const products = parseProducts(filters.products);
-  if (products.length && !(item.matchedProducts || []).length) return false;
+  if (products.length) {
+    const hasText = Boolean((item.title || "").trim() || (item.description || "").trim() || (item.snippet || "").trim());
+    if (hasText && (item.matchedProducts || []).length === 0) return false;
+  }
   return true;
 }
 
@@ -210,11 +216,18 @@ function parseProducts(input = "") {
 
 function buildQueries(query, platforms = []) {
   const selected = platforms.length ? platforms : ["Instagram"];
-  return selected.map((platform) => {
+  const queries = [];
+  for (const platform of selected) {
     const rules = PLATFORM_RULES[platform] || [];
-    const sitePart = rules.join(" OR ");
-    return sitePart ? `${query} (${sitePart})` : query;
-  });
+    if (!rules.length) {
+      queries.push(query);
+      continue;
+    }
+    for (const rule of rules) {
+      queries.push(`${query} ${rule}`);
+    }
+  }
+  return [...new Set(queries)];
 }
 
 export {
@@ -226,5 +239,7 @@ export {
   scoreItem,
   filterItem,
   buildQueries,
-  parseProducts
+  parseProducts,
+  inferPlatform,
+  detectLanguage
 };
