@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>社交平台影片搜尋器 Web 版</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <div class="badge">Cloudflare Pages 版</div>
+        <h1>社交平台影片搜尋器</h1>
+        <p class="hero-text">網站上直接搜尋公開影片頁面，支援 Instagram 為主，亦可搜 TikTok、YouTube、Facebook、X。可按語言、產品關鍵字、背景主色篩選，並輸出網址、簡介和報告。</p>
+      </div>
+      <div class="hero-actions">
+        <button id="demoBtn" class="secondary-btn">載入示範資料</button>
+        <button id="exportHtmlBtn" class="secondary-btn">匯出 HTML 報告</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel form-panel">
+        <div class="section-title-row">
+          <h2>搜尋條件</h2>
+          <span class="muted">簡單直接，給唔熟電腦的人用</span>
+        </div>
+
+        <label>一句話需求</label>
+        <textarea id="naturalQuery" rows="3" placeholder="例如：幫我搵 IG 英文咖啡片，藍色背景，有 latte 同 grinder"></textarea>
+
+        <div class="grid-2">
+          <div>
+            <label>主題關鍵字</label>
+            <input id="query" type="text" placeholder="例如 coffee review" />
+          </div>
+          <div>
+            <label>平台</label>
+            <select id="platforms" multiple>
+              <option value="Instagram" selected>Instagram</option>
+              <option value="TikTok">TikTok</option>
+              <option value="YouTube">YouTube</option>
+              <option value="Facebook">Facebook</option>
+              <option value="X / Twitter">X / Twitter</option>
+            </select>
+            <small class="muted">可多選：Windows 按 Ctrl，Mac 按 Command</small>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div>
+            <label>語言</label>
+            <select id="language">
+              <option value="all">全部</option>
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+            </select>
+          </div>
+          <div>
+            <label>背景主色</label>
+            <select id="color">
+              <option value="">不限</option>
+              <option value="blue">藍</option>
+              <option value="pink">粉紅</option>
+              <option value="green">綠</option>
+              <option value="yellow">黃</option>
+              <option value="black">黑</option>
+              <option value="white">白</option>
+              <option value="red">紅</option>
+              <option value="purple">紫</option>
+              <option value="brown">啡</option>
+              <option value="gray">灰</option>
+              <option value="orange">橙</option>
+            </select>
+          </div>
+          <div>
+            <label>最多結果</label>
+            <input id="maxResults" type="number" min="5" max="50" value="15" />
+          </div>
+        </div>
+
+        <label>產品關鍵字（用逗號分隔）</label>
+        <input id="products" type="text" placeholder="例如 latte, grinder, coffee beans" />
+
+        <div class="action-row">
+          <button id="searchBtn" class="primary-btn">開始搜尋</button>
+          <button id="resetBtn" class="secondary-btn">清空</button>
+        </div>
+      </section>
+
+      <section class="panel form-panel">
+        <div class="section-title-row">
+          <h2>批量網址分析</h2>
+          <span class="muted">貼一堆 Reel / Shorts / TikTok 連結再整理</span>
+        </div>
+
+        <label>貼上影片網址（每行一個）</label>
+        <textarea id="urlList" rows="8" placeholder="https://www.instagram.com/reel/...\nhttps://www.youtube.com/shorts/... "></textarea>
+
+        <div class="grid-2">
+          <div>
+            <label>上傳 TXT / CSV / JSON</label>
+            <input id="fileInput" type="file" accept=".txt,.csv,.json" />
+          </div>
+          <div class="action-row align-end">
+            <button id="analyzeBtn" class="primary-btn">分析網址清單</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel summary-panel">
+        <div class="section-title-row">
+          <h2>結果總覽</h2>
+          <span id="statusText" class="muted">尚未開始</span>
+        </div>
+        <div id="summaryGrid" class="summary-grid"></div>
+      </section>
+
+      <section class="panel results-panel">
+        <div class="section-title-row">
+          <h2>搜尋結果</h2>
+          <div class="toolbar">
+            <button id="copyUrlsBtn" class="ghost-btn">複製全部網址</button>
+            <button id="downloadCsvBtn" class="ghost-btn">下載 CSV</button>
+            <button id="downloadJsonBtn" class="ghost-btn">下載 JSON</button>
+          </div>
+        </div>
+        <div id="resultsContainer" class="results-container empty">未有結果</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

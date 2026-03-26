@@ -1,0 +1,9 @@
+{
+  "name": "social-video-finder-web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx wrangler pages dev public --compatibility-date=2026-03-26",
+    "deploy": "echo 'Deploy with Cloudflare Pages via GitHub or Wrangler'"
+  }
+}
