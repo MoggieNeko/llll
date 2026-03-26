@@ -1,10 +1,10 @@
 {
-  "name": "social-video-finder-web-v2",
+  "name": "social-video-finder-web-v4",
+  "version": "4.0.0",
   "private": true,
-  "version": "2.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev public --compatibility-date=2025-01-01",
-    "deploy": "wrangler pages deploy public"
+    "deploy": "echo Deploy with Cloudflare Pages",
+    "dev": "npx wrangler pages dev public --compatibility-date=2025-03-01"
   }
 }

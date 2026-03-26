@@ -1,62 +1,57 @@
-import { json, fetchPage, parseMeta, tryOEmbed, enrichWithThumbnailColor, scoreItem, filterItem, inferPlatform, detectLanguage, cleanText } from './_lib.js';
+import {
+  json,
+  parseCollectorInput,
+  fetchPage,
+  parseMeta,
+  enrichWithThumbnailColor,
+  scoreItem,
+  filterItem,
+  cleanText
+} from './_lib.js';
 
-export const onRequestOptions = () => json({ ok: true });
+export async function onRequestOptions() {
+  return json({ ok: true });
+}
 
 export async function onRequestPost(context) {
   try {
-    const payload = await context.request.json();
-    const urls = Array.isArray(payload.urls) ? payload.urls.slice(0, 100) : [];
-    if (!urls.length) return json({ error: 'Missing urls' }, 400);
-
+    const body = await context.request.json();
     const filters = {
-      query: payload.query || '',
-      language: payload.language || 'all',
-      color: payload.color || '',
-      products: payload.products || '',
-      strictMode: Boolean(payload.strictMode),
-      preferYoutube: true
+      query: cleanText(body.query || ''),
+      language: body.language || 'all',
+      color: body.color || '',
+      products: body.products || '',
+      strictMode: Boolean(body.strictMode),
+      platforms: Array.isArray(body.platforms) ? body.platforms.filter(Boolean) : [],
+      preferInstagram: body.preferInstagram !== false
+    };
+
+    const inputText = [body.collectorText || '', body.urlList || ''].filter(Boolean).join('\n');
+    const items = parseCollectorInput(inputText);
+    const debug = {
+      received: items.length,
+      fetchedPages: 0,
+      fetchedFailures: 0,
+      collectorItems: items.filter(v => v.source === '瀏覽器收集器').length,
+      plainUrlItems: items.filter(v => v.source !== '瀏覽器收集器').length,
+      filteredOut: 0
     };
 
     const results = [];
-    const debug = { mode: 'analyze-urls', inputUrls: urls.length, oembedHits: 0, pageFetchHits: 0, fallbacks: 0, filteredOut: 0 };
 
-    for (const url of urls) {
-      let item = {
-        platform: inferPlatform(url),
-        url,
-        title: '',
-        description: '',
-        snippet: '',
-        thumbnailUrl: '',
-        detectedLanguage: 'unknown',
-        dominantColorName: 'unknown',
-        intro: '',
-        matchedProducts: [],
-        matchReasons: []
-      };
+    for (const baseItem of items.slice(0, 120)) {
+      let item = { ...baseItem };
 
-      const oembed = await tryOEmbed(url);
-      if (oembed) {
-        item.title = oembed.title || item.title;
-        item.thumbnailUrl = oembed.thumbnailUrl || item.thumbnailUrl;
-        item.authorName = oembed.authorName || '';
-        item.providerName = oembed.providerName || '';
-        item.description = cleanText(`${oembed.authorName || ''} ${oembed.providerName || ''}`);
-        item.snippet = item.description;
-        item.detectedLanguage = detectLanguage(`${item.title} ${item.description}`);
-        item.intro = cleanText(`${item.title} ${item.description}`).slice(0, 220);
-        debug.oembedHits += 1;
-      }
-
-      if (!item.title || !item.thumbnailUrl) {
+      const shouldFetch = (!item.title && !item.description && !item.pageText) || body.forceFetch;
+      if (shouldFetch) {
         try {
-          const html = await fetchPage(url);
-          const parsed = parseMeta(html, url);
-          item = { ...item, ...parsed, title: item.title || parsed.title, thumbnailUrl: item.thumbnailUrl || parsed.thumbnailUrl };
-          item.intro = cleanText(item.description || item.snippet || item.title).slice(0, 220);
-          debug.pageFetchHits += 1;
+          const html = await fetchPage(item.url);
+          const meta = parseMeta(html, item.url);
+          item = { ...meta, ...item, title: item.title || meta.title, description: item.description || meta.description, snippet: item.snippet || meta.snippet, thumbnailUrl: item.thumbnailUrl || meta.thumbnailUrl, pageText: item.pageText || meta.pageText, detectedLanguage: item.detectedLanguage === 'unknown' ? meta.detectedLanguage : item.detectedLanguage, fetchStatus: 'fetched' };
+          debug.fetchedPages += 1;
         } catch {
-          debug.fallbacks += 1;
+          item.fetchStatus = 'failed';
+          debug.fetchedFailures += 1;
         }
       }
 

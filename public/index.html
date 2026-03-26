@@ -3,26 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>社交平台影片搜尋器 V2</title>
+  <title>IG 影片收集分析器 V4</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <main class="app-shell">
     <header class="hero">
-      <h1>社交平台影片搜尋器 V2</h1>
-      <p>改用較穩定的工作流：YouTube 走正式搜尋；Instagram / TikTok 走瀏覽器收集後分析。</p>
+      <div class="badge">V4 · IG First</div>
+      <h1>Instagram 影片收集分析器</h1>
+      <p>不再假裝可匿名精準全網搜 IG。這版改成真正可用流程：先在 Instagram 搜尋，再把可見 Reel / Post 收集回來，交給網站分析與排序。</p>
     </header>
 
-    <section class="panel warning-panel">
-      <strong>先講清楚：</strong>
-      <span>如果你要在 IG / TikTok「匿名全網精準搜尋」而又唔想開 VPN，上一版架構做不到。這版已改成較穩定方案。</span>
+    <section class="panel info-panel">
+      <div class="info-title">建議工作流</div>
+      <ol class="flow-list">
+        <li>先去 Instagram 站內搜尋，例如 hashtag、Explore、Reels、指定帳號。</li>
+        <li>在該頁按 Bookmarklet / Chrome Extension，收集可見貼文連結和簡介片段。</li>
+        <li>貼回這個網站，再按語言、產品字眼、背景主色做篩選與排序。</li>
+      </ol>
     </section>
 
     <section class="grid two-col">
       <section class="panel">
-        <h2>1. 需求設定</h2>
+        <div class="toolbar align-start">
+          <h2>1. 需求設定</h2>
+          <button id="applyNaturalBtn">套用一句話需求</button>
+        </div>
+
         <label>一句話需求</label>
-        <textarea id="naturalQuery" rows="3" placeholder="例如：搵 YouTube 英文咖啡 review，藍色背景，有 grinder / latte"></textarea>
+        <textarea id="naturalQuery" rows="3" placeholder="例如：搵 IG 英文咖啡片，藍色背景，有 latte / grinder"></textarea>
 
         <label>主題關鍵字</label>
         <input id="query" placeholder="例如：coffee review" />
@@ -31,9 +40,9 @@
           <div>
             <label>平台</label>
             <select id="platforms" multiple>
-              <option value="YouTube" selected>YouTube</option>
-              <option value="Instagram">Instagram</option>
+              <option value="Instagram" selected>Instagram</option>
               <option value="TikTok">TikTok</option>
+              <option value="YouTube">YouTube</option>
               <option value="Facebook">Facebook</option>
               <option value="X / Twitter">X / Twitter</option>
             </select>
@@ -70,45 +79,38 @@
           </div>
           <div>
             <label>產品字眼</label>
-            <input id="products" placeholder="例如：latte, grinder, coffee beans" />
+            <input id="products" placeholder="例如：latte, grinder, beans" />
           </div>
         </div>
 
         <div class="grid two-col inner-grid">
-          <div>
-            <label>YouTube API Key（可留空）</label>
-            <input id="youtubeApiKey" type="password" placeholder="未設環境變數時可暫時填入" />
-          </div>
-          <div>
-            <label>最大結果數</label>
-            <input id="maxResults" type="number" min="5" max="50" value="15" />
-          </div>
-        </div>
-
-        <label class="checkbox-row"><input id="strictMode" type="checkbox" /> 嚴格模式（全部條件都要更接近才保留）</label>
-
-        <div class="action-row">
-          <button id="applyNaturalBtn">套用一句話需求</button>
-          <button id="youtubeSearchBtn" class="primary">YouTube 搜尋</button>
+          <label class="checkbox-row"><input id="strictMode" type="checkbox" /> 嚴格模式</label>
+          <label class="checkbox-row"><input id="forceFetch" type="checkbox" /> 強制補抓頁面資料</label>
         </div>
       </section>
 
       <section class="panel">
-        <h2>2. Instagram / TikTok / 其他平台</h2>
-        <p class="muted">先在平台內自己搜尋，再用 bookmarklet 收集當前頁面的可見影片網址，貼回來分析。</p>
-        <label>網址清單</label>
-        <textarea id="urlList" rows="11" placeholder="每行一條網址"></textarea>
-        <div class="action-row">
-          <button id="analyzeBtn" class="primary">分析網址</button>
-          <button id="sampleBtn">載入示範網址</button>
+        <div class="toolbar align-start">
+          <h2>2. 貼上收集資料</h2>
+          <div class="action-row compact">
+            <button id="sampleCollectorBtn">示範 JSON</button>
+            <button id="sampleUrlBtn">示範網址</button>
+          </div>
         </div>
-        <div class="bookmarklet-box">
-          <div>Bookmarklet 用法：</div>
+
+        <label>收集器 JSON / 純網址清單</label>
+        <textarea id="collectorText" rows="14" placeholder="可直接貼上 bookmarklet / extension 複製出來的 JSON，或者每行一條網址"></textarea>
+        <div class="action-row">
+          <button id="analyzeBtn" class="primary">分析並排序</button>
+          <button id="clearBtn">清空</button>
+        </div>
+        <div class="helper-box">
+          <div class="helper-title">Bookmarklet 用法</div>
           <ol>
-            <li>將 README / bookmarklet.txt 裡的整段 Javascript 存成瀏覽器書籤</li>
-            <li>去 Instagram / TikTok / YouTube 頁面</li>
-            <li>按書籤，會自動複製可見網址</li>
-            <li>貼回上面分析</li>
+            <li>將 <code>browser_helper/bookmarklet.txt</code> 內容存成瀏覽器書籤。</li>
+            <li>打開 Instagram 搜尋結果頁、Reels 頁、hashtag 頁或指定帳號頁。</li>
+            <li>按一下書籤，會自動複製 JSON 收集結果到剪貼簿。</li>
+            <li>貼回這裡分析。</li>
           </ol>
         </div>
       </section>
@@ -124,8 +126,8 @@
         </div>
       </div>
       <div id="statusText" class="status">未開始</div>
-      <pre id="debugBox" class="debug-box">debug 會顯示在這裡</pre>
       <div id="summaryGrid" class="summary-grid"></div>
+      <pre id="debugBox" class="debug-box">debug 會顯示在這裡</pre>
       <div id="resultsContainer" class="results empty">未有結果</div>
     </section>
   </main>

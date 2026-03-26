@@ -12,17 +12,13 @@ export function json(data, status = 200) {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,POST,OPTIONS'
+      'access-control-allow-methods': 'POST,OPTIONS'
     }
   });
 }
 
 export function cleanText(value = '') {
   return String(value).replace(/\s+/g, ' ').trim();
-}
-
-export function parseProducts(input = '') {
-  return [...new Set(String(input).split(/[\n,;|]/).map(v => cleanText(v).toLowerCase()).filter(Boolean))];
 }
 
 export function inferPlatform(url = '') {
@@ -37,14 +33,92 @@ export function inferPlatform(url = '') {
   return 'Other';
 }
 
+export function parseProducts(input = '') {
+  return [...new Set(String(input).split(/[\n,;|]/).map(v => cleanText(v).toLowerCase()).filter(Boolean))];
+}
+
 export function detectLanguage(text = '') {
-  const sample = String(text).slice(0, 600);
+  const sample = String(text).slice(0, 800);
   if (!sample) return 'unknown';
   if(/[\u3040-\u30ff]/.test(sample)) return 'ja';
   if(/[\uac00-\ud7af]/.test(sample)) return 'ko';
   if(/[\u4e00-\u9fff]/.test(sample)) return 'zh';
   if(/[a-zA-Z]/.test(sample)) return 'en';
   return 'unknown';
+}
+
+export function parseCollectorInput(input = '') {
+  const raw = String(input || '').trim();
+  if (!raw) return [];
+
+  // JSON collector export
+  if (raw.startsWith('[') || raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
+      const items = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.items) ? parsed.items : []);
+      return dedupeItems(items.map(normalizeCollectedItem).filter(Boolean));
+    } catch {}
+  }
+
+  // Plain URLs
+  const lines = raw.split(/\r?\n/).map(v => v.trim()).filter(Boolean);
+  const urlItems = lines
+    .filter(line => /^https?:\/\//i.test(line))
+    .map(url => normalizeCollectedItem({ url }));
+  return dedupeItems(urlItems.filter(Boolean));
+}
+
+export function normalizeCollectedItem(item = {}) {
+  const url = cleanText(item.url || item.href || '');
+  if (!/^https?:\/\//i.test(url)) return null;
+  const platform = item.platform || inferPlatform(url);
+  const title = cleanText(item.title || item.alt || item.caption || item.text || '');
+  const snippet = cleanText(item.snippet || item.caption || item.text || '');
+  const description = cleanText(item.description || item.caption || item.text || '');
+  const thumbnailUrl = cleanText(item.thumbnailUrl || item.thumbnail || item.image || '');
+  const source = cleanText(item.source || (item.collectedAt ? '瀏覽器收集器' : '手動貼上網址'));
+  const pageText = cleanText(item.pageText || item.context || item.caption || item.text || '');
+  const languageText = cleanText(`${title} ${description} ${pageText}`);
+  const itemOut = {
+    platform,
+    url,
+    title,
+    snippet,
+    description,
+    thumbnailUrl,
+    detectedLanguage: detectLanguage(languageText),
+    dominantColorName: item.dominantColorName || 'unknown',
+    intro: cleanText(description || snippet || title).slice(0, 220),
+    matchedProducts: [],
+    matchReasons: [],
+    score: 0,
+    source,
+    pageText,
+    authorName: cleanText(item.authorName || ''),
+    collectedAt: cleanText(item.collectedAt || ''),
+    confidence: 'medium',
+    fetchStatus: 'not_fetched'
+  };
+  return itemOut;
+}
+
+function dedupeItems(items = []) {
+  const map = new Map();
+  for (const item of items) {
+    if (!item?.url) continue;
+    const existing = map.get(item.url);
+    if (!existing) {
+      map.set(item.url, item);
+      continue;
+    }
+    const merged = { ...existing };
+    for (const key of Object.keys(item)) {
+      if ((!merged[key] || merged[key] === 'unknown' || merged[key] === 'not_fetched') && item[key]) merged[key] = item[key];
+      if (typeof item[key] === 'string' && item[key].length > String(merged[key] || '').length) merged[key] = item[key];
+    }
+    map.set(item.url, merged);
+  }
+  return [...map.values()];
 }
 
 function decodeHtml(str = '') {
@@ -63,32 +137,11 @@ function getMeta(html, property) {
     new RegExp(`<meta[^>]+name=["']${property}["'][^>]+content=["']([^"']+)["']`, 'i'),
     new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+name=["']${property}["']`, 'i')
   ];
-  for (const p of patterns) {
-    const match = html.match(p);
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
     if (match?.[1]) return decodeHtml(match[1]);
   }
   return '';
-}
-
-export function parseMeta(html = '', url = '') {
-  const titleMatch = html.match(/<title>(.*?)<\/title>/is);
-  const title = getMeta(html, 'og:title') || cleanText(decodeHtml(titleMatch?.[1] || ''));
-  const description = getMeta(html, 'og:description') || getMeta(html, 'description');
-  const thumbnailUrl = getMeta(html, 'og:image') || getMeta(html, 'twitter:image');
-  const content = `${title} ${description}`;
-  return {
-    platform: inferPlatform(url),
-    url,
-    title,
-    snippet: description,
-    description,
-    thumbnailUrl,
-    detectedLanguage: detectLanguage(content),
-    dominantColorName: 'unknown',
-    intro: cleanText(description).slice(0, 220),
-    matchedProducts: [],
-    matchReasons: []
-  };
 }
 
 export async function fetchPage(url) {
@@ -103,29 +156,32 @@ export async function fetchPage(url) {
   return await resp.text();
 }
 
-export async function tryOEmbed(url) {
-  const platform = inferPlatform(url);
-  const oembedTargets = [];
-  if (platform === 'YouTube') {
-    oembedTargets.push(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(url)}`);
-  }
-  oembedTargets.push(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
-
-  for (const endpoint of oembedTargets) {
-    try {
-      const resp = await fetch(endpoint, { headers: { 'user-agent': USER_AGENT } });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      return {
-        title: cleanText(data.title || ''),
-        thumbnailUrl: data.thumbnail_url || '',
-        authorName: cleanText(data.author_name || ''),
-        providerName: cleanText(data.provider_name || ''),
-        html: data.html || ''
-      };
-    } catch {}
-  }
-  return null;
+export function parseMeta(html = '', url = '') {
+  const titleMatch = html.match(/<title>(.*?)<\/title>/is);
+  const title = getMeta(html, 'og:title') || cleanText(decodeHtml(titleMatch?.[1] || ''));
+  const description = getMeta(html, 'og:description') || getMeta(html, 'description');
+  const thumbnailUrl = getMeta(html, 'og:image') || getMeta(html, 'twitter:image');
+  const authorName = getMeta(html, 'author');
+  const pageText = cleanText(html.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).slice(0, 1200);
+  return {
+    platform: inferPlatform(url),
+    url,
+    title,
+    snippet: description,
+    description,
+    thumbnailUrl,
+    detectedLanguage: detectLanguage(`${title} ${description} ${pageText}`),
+    dominantColorName: 'unknown',
+    intro: cleanText(description || title).slice(0, 220),
+    matchedProducts: [],
+    matchReasons: [],
+    score: 0,
+    source: '頁面補抓',
+    pageText,
+    authorName,
+    confidence: 'low',
+    fetchStatus: 'fetched'
+  };
 }
 
 function distance(a, b) {
@@ -171,28 +227,29 @@ export function parseNaturalTerms(query = '') {
   const mustTerms = raw.split(/\s+/).filter(Boolean);
   const expanded = new Set(mustTerms);
   const synonymMap = {
-    coffee: ['latte', 'espresso', 'cafe', 'cappuccino', 'beans'],
+    coffee: ['latte', 'espresso', 'cafe', 'cappuccino', 'beans', 'grinder'],
     skincare: ['serum', 'cream', 'toner', 'beauty'],
     bag: ['handbag', 'tote', 'crossbody'],
     shoe: ['sneaker', 'heels', 'boots'],
-    camera: ['lens', 'photography']
+    camera: ['lens', 'photography'],
+    fashion: ['outfit', 'lookbook', 'styling']
   };
-  for (const [k, arr] of Object.entries(synonymMap)) {
-    if (mustTerms.includes(k)) arr.forEach(v => expanded.add(v));
+  for (const [key, arr] of Object.entries(synonymMap)) {
+    if (mustTerms.includes(key)) arr.forEach(v => expanded.add(v));
   }
   return { mustTerms, expandedTerms: [...expanded] };
 }
 
 export function scoreItem(item, filters = {}) {
-  const text = cleanText(`${item.title} ${item.description} ${item.snippet} ${item.authorName || ''}`).toLowerCase();
+  const text = cleanText(`${item.title} ${item.description} ${item.snippet} ${item.pageText} ${item.authorName || ''}`).toLowerCase();
   const reasons = [];
-  let score = 20;
+  let score = 15;
 
   const { mustTerms, expandedTerms } = parseNaturalTerms(filters.query || '');
   const strongHits = mustTerms.filter(term => text.includes(term));
   const softHits = expandedTerms.filter(term => !strongHits.includes(term) && text.includes(term));
   if (strongHits.length) {
-    score += Math.min(35, strongHits.length * 10);
+    score += Math.min(40, strongHits.length * 11);
     reasons.push(`主題命中：${strongHits.join(', ')}`);
   }
   if (softHits.length) {
@@ -200,12 +257,17 @@ export function scoreItem(item, filters = {}) {
     reasons.push(`延伸字眼：${softHits.slice(0, 5).join(', ')}`);
   }
 
+  if (filters.preferInstagram && item.platform === 'Instagram') {
+    score += 10;
+    reasons.push('Instagram 優先');
+  }
+
   if (filters.language && filters.language !== 'all') {
     if (item.detectedLanguage === filters.language) {
-      score += 15;
+      score += 16;
       reasons.push(`語言符合：${filters.language}`);
     } else if (item.detectedLanguage === 'unknown') {
-      score -= 3;
+      score -= 2;
     } else {
       score -= 8;
     }
@@ -218,7 +280,7 @@ export function scoreItem(item, filters = {}) {
     score += Math.min(24, productHits.length * 8);
     reasons.push(`產品字眼：${productHits.join(', ')}`);
   } else if (productTerms.length) {
-    score -= 4;
+    score -= 3;
   }
 
   if (filters.color) {
@@ -234,16 +296,18 @@ export function scoreItem(item, filters = {}) {
     score += 4;
     reasons.push('有縮圖');
   }
-  if (item.description) {
-    score += 4;
-    reasons.push('有描述');
-  }
-  if (item.authorName) {
-    score += 2;
-  }
-
-  if (item.platform === 'YouTube' && filters.preferYoutube !== false) {
+  if (item.description || item.pageText) {
     score += 5;
+    reasons.push('有內容文本');
+  }
+  if (item.source === '瀏覽器收集器') {
+    score += 8;
+    reasons.push('來自瀏覽器收集');
+    item.confidence = 'high';
+  } else if (item.fetchStatus === 'fetched') {
+    item.confidence = 'medium';
+  } else {
+    item.confidence = 'low';
   }
 
   item.score = Math.max(0, score);
@@ -253,14 +317,13 @@ export function scoreItem(item, filters = {}) {
 
 export function filterItem(item, filters = {}) {
   if (!filters.strictMode) return true;
-
-  const text = cleanText(`${item.title} ${item.description} ${item.snippet}`).toLowerCase();
+  const text = cleanText(`${item.title} ${item.description} ${item.snippet} ${item.pageText}`).toLowerCase();
   const mustTerms = parseNaturalTerms(filters.query || '').mustTerms;
   const productTerms = parseProducts(filters.products);
-
   if (mustTerms.length && !mustTerms.some(term => text.includes(term))) return false;
   if (filters.language && filters.language !== 'all' && item.detectedLanguage !== filters.language) return false;
   if (productTerms.length && !productTerms.some(term => text.includes(term))) return false;
   if (filters.color && item.dominantColorName !== 'unknown' && item.dominantColorName !== filters.color) return false;
+  if (filters.platforms?.length && !filters.platforms.includes(item.platform)) return false;
   return true;
 }

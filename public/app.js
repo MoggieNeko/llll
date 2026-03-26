@@ -17,15 +17,13 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 function escapeAttr(value) { return escapeHtml(value); }
-function jsSafe(value) { return String(value || '').replaceAll('\\', '\\\\').replaceAll("'", "\\'"); }
 
 function parseNaturalLanguage(input) {
   const text = (input || '').trim();
   if (!text) return {};
-  const parsed = { query: text };
-  if (/(youtube|yt|shorts)/i.test(text)) parsed.platforms = ['YouTube'];
-  if (/(ig|instagram)/i.test(text)) parsed.platforms = ['Instagram'];
-  if (/tiktok/i.test(text)) parsed.platforms = ['TikTok'];
+  const parsed = { query: text, platforms: ['Instagram'] };
+  if (/(tiktok)/i.test(text)) parsed.platforms = ['TikTok'];
+  if (/(youtube|yt)/i.test(text)) parsed.platforms = ['YouTube'];
   if (/(facebook|fb)/i.test(text)) parsed.platforms = ['Facebook'];
   if (/(x|twitter)/i.test(text)) parsed.platforms = ['X / Twitter'];
 
@@ -41,7 +39,7 @@ function parseNaturalLanguage(input) {
   ];
   for (const [regex, color] of colorMap) if (regex.test(text)) { parsed.color = color; break; }
 
-  const candidateTerms = ['latte', 'grinder', 'coffee', 'beans', 'espresso', 'serum', 'skincare', 'lipstick', 'bag', 'shoe', 'camera'];
+  const candidateTerms = ['latte', 'grinder', 'coffee', 'beans', 'espresso', 'serum', 'skincare', 'lipstick', 'bag', 'shoe', 'camera', 'outfit'];
   const hits = candidateTerms.filter(term => new RegExp(`\\b${term}\\b`, 'i').test(text));
   if (hits.length) parsed.products = hits.join(', ');
   return parsed;
@@ -60,13 +58,13 @@ function applyNaturalLanguage() {
   }
 }
 
-function normalizeUrls(text) {
-  return [...new Set(String(text || '').split(/\r?\n|,|;/).map(v => v.trim()).filter(v => /^https?:\/\//i.test(v)))];
-}
-
 function colorHex(name) {
   const map = { red:'#dc3247', orange:'#f39c12', yellow:'#f1c40f', green:'#2ecc71', blue:'#3498db', purple:'#9b59b6', pink:'#e87ea4', brown:'#8d6e63', black:'#2d2d2d', white:'#ecf0f1', gray:'#95a5a6', unknown:'#7f8c8d' };
   return map[name] || map.unknown;
+}
+
+function confidenceLabel(value) {
+  return value === 'high' ? '高可信' : value === 'medium' ? '中可信' : '低可信';
 }
 
 function updateSummary(results) {
@@ -103,150 +101,177 @@ function renderResults(results) {
         ${item.thumbnailUrl ? `<img src="${escapeAttr(item.thumbnailUrl)}" alt="thumbnail" loading="lazy" />` : `<div class="no-thumb">沒有縮圖</div>`}
       </div>
       <div>
-        <h3>${escapeHtml(item.title || '未命名影片')}</h3>
+        <h3>${escapeHtml(item.title || '未命名內容')}</h3>
         <div class="meta-row">
           <span class="chip">${escapeHtml(item.platform || 'Other')}</span>
           <span class="chip">${escapeHtml(item.detectedLanguage || 'unknown')}</span>
           <span class="chip"><span class="color-dot" style="background:${colorHex(item.dominantColorName)}"></span>${escapeHtml(item.dominantColorName || 'unknown')}</span>
           <span class="chip">分數 ${escapeHtml(String(item.score || 0))}</span>
+          <span class="chip confidence-${escapeHtml(item.confidence || 'low')}">${escapeHtml(confidenceLabel(item.confidence))}</span>
         </div>
         <div class="chips" style="margin-top:8px;">
           ${(item.matchedProducts || []).map(v => `<span class="chip">${escapeHtml(v)}</span>`).join('')}
         </div>
-        <p>${escapeHtml(item.intro || item.description || item.snippet || '沒有簡介')}</p>
-        <div class="reason-list">
-          ${(item.matchReasons || []).map(v => `<span class="chip">${escapeHtml(v)}</span>`).join('')}
-        </div>
-        <div class="result-actions" style="margin-top:12px;">
-          <a href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer">打開頁面</a>
-          <button onclick="copyText('${jsSafe(item.url)}')">複製網址</button>
+        <p class="muted">${escapeHtml(item.intro || item.description || item.snippet || '')}</p>
+        <div class="small-note">來源：${escapeHtml(item.source || '-')} ${item.fetchStatus ? `· 補抓：${escapeHtml(item.fetchStatus)}` : ''}</div>
+        <details>
+          <summary>為何排前</summary>
+          <ul>
+            ${(item.matchReasons || []).map(v => `<li>${escapeHtml(v)}</li>`).join('') || '<li>沒有額外說明</li>'}
+          </ul>
+        </details>
+        <div class="action-row top-gap">
+          <a href="${escapeAttr(item.url)}" target="_blank" rel="noreferrer noopener" class="link-btn">打開原網址</a>
         </div>
       </div>
     </article>
   `).join('');
 }
 
-async function copyText(value) {
-  try { await navigator.clipboard.writeText(value); alert('已複製'); }
-  catch { alert('複製失敗'); }
-}
-window.copyText = copyText;
-
-function downloadFile(filename, text, type) {
-  const blob = new Blob([text], { type });
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
-function toCsv(results) {
-  const headers = ['platform','url','title','language','color','score','matchedProducts','matchReasons','intro'];
-  const rows = results.map(item => [
-    item.platform, item.url, item.title, item.detectedLanguage, item.dominantColorName, item.score,
-    (item.matchedProducts || []).join('|'), (item.matchReasons || []).join('|'), item.intro || item.description || item.snippet || ''
-  ]);
-  return [headers, ...rows].map(row => row.map(cell => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+function exportCsv() {
+  if (!state.results.length) return alert('未有結果');
+  const headers = ['platform','url','title','detectedLanguage','dominantColorName','matchedProducts','score','confidence','source','intro'];
+  const rows = [headers.join(',')];
+  for (const item of state.results) {
+    const values = headers.map(key => {
+      const value = Array.isArray(item[key]) ? item[key].join('|') : (item[key] ?? '');
+      return `"${String(value).replaceAll('"', '""')}"`;
+    });
+    rows.push(values.join(','));
+  }
+  downloadBlob('ig-video-analysis-v4.csv', rows.join('\n'), 'text/csv;charset=utf-8');
 }
 
-function exportHtmlReport() {
-  if (!state.results.length) { alert('未有結果'); return; }
-  const cards = state.results.map(item => `
-    <div style="border:1px solid #ddd;border-radius:16px;padding:16px;margin-bottom:14px;font-family:Arial,sans-serif;">
-      <h3 style="margin:0 0 8px;">${escapeHtml(item.title || '未命名影片')}</h3>
-      <p><strong>平台：</strong>${escapeHtml(item.platform)} | <strong>語言：</strong>${escapeHtml(item.detectedLanguage)} | <strong>主色：</strong>${escapeHtml(item.dominantColorName)} | <strong>分數：</strong>${escapeHtml(String(item.score || 0))}</p>
-      <p><strong>網址：</strong><a href="${escapeAttr(item.url)}">${escapeHtml(item.url)}</a></p>
-      <p><strong>原因：</strong>${escapeHtml((item.matchReasons || []).join(' / '))}</p>
-      <p>${escapeHtml(item.intro || item.description || item.snippet || '')}</p>
-    </div>
-  `).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>影片搜尋報告</title></head><body><h1>影片搜尋報告</h1>${cards}</body></html>`;
-  downloadFile('video-report.html', html, 'text/html;charset=utf-8');
+function exportJson() {
+  if (!state.results.length) return alert('未有結果');
+  downloadBlob('ig-video-analysis-v4.json', JSON.stringify(state.results, null, 2), 'application/json;charset=utf-8');
 }
 
-async function postJson(url, payload) {
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-  return data;
+function exportHtml() {
+  if (!state.results.length) return alert('未有結果');
+  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>IG 分析報告</title><style>body{font-family:Arial,sans-serif;padding:24px;background:#f6f7fb;color:#1e293b}article{background:#fff;border:1px solid #d8e0ee;border-radius:16px;padding:18px;margin-bottom:16px}img{max-width:240px;border-radius:12px}h1{margin-top:0}.chip{display:inline-block;margin:0 6px 6px 0;padding:4px 10px;border-radius:999px;background:#eef3ff;border:1px solid #c8d8ff;font-size:12px}</style></head><body><h1>IG 影片分析報告</h1>${state.results.map(item => `<article><h2>${escapeHtml(item.title || '未命名內容')}</h2>${item.thumbnailUrl ? `<img src="${escapeAttr(item.thumbnailUrl)}" alt="thumb">` : ''}<p><a href="${escapeAttr(item.url)}">${escapeHtml(item.url)}</a></p><p>${escapeHtml(item.intro || '')}</p><div>${(item.matchReasons || []).map(r => `<span class="chip">${escapeHtml(r)}</span>`).join('')}</div></article>`).join('')}</body></html>`;
+  downloadBlob('ig-video-analysis-v4.html', html, 'text/html;charset=utf-8');
 }
 
-function commonPayload() {
-  return {
+async function runAnalyze() {
+  const collectorText = $('collectorText').value.trim();
+  if (!collectorText) {
+    alert('請先貼上收集器 JSON 或網址清單');
+    return;
+  }
+
+  const payload = {
+    collectorText,
     query: $('query').value.trim(),
-    platforms: getSelectedValues($('platforms')),
     language: $('language').value,
     color: $('color').value,
-    products: $('products').value,
-    maxResults: Number($('maxResults').value || 15),
+    products: $('products').value.trim(),
     strictMode: $('strictMode').checked,
-    youtubeApiKey: $('youtubeApiKey').value.trim()
+    forceFetch: $('forceFetch').checked,
+    platforms: getSelectedValues($('platforms'))
   };
-}
 
-async function runYoutubeSearch() {
-  applyNaturalLanguage();
-  const payload = commonPayload();
-  if (!payload.query) { alert('請先輸入主題關鍵字'); return; }
-  setStatus('YouTube 搜尋中...');
+  setStatus('分析中...');
+  setDebug('requesting /api/analyze');
+
   try {
-    const data = await postJson('/api/youtube-search', payload);
+    const resp = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '分析失敗');
     state.results = data.results || [];
-    renderResults(state.results);
-    updateSummary(state.results);
+    setStatus(`完成：${state.results.length} 筆結果`);
     setDebug(data.debug || {});
-    setStatus(`完成，共 ${state.results.length} 個結果`);
-  } catch (err) {
-    setStatus('YouTube 搜尋失敗');
-    setDebug({ error: err.message || String(err) });
-    alert(`YouTube 搜尋失敗：${err.message || err}`);
+    updateSummary(state.results);
+    renderResults(state.results);
+    localStorage.setItem('igFinderV4:lastCollectorText', collectorText);
+    localStorage.setItem('igFinderV4:lastFilters', JSON.stringify(payload));
+  } catch (error) {
+    setStatus('失敗');
+    setDebug(String(error?.message || error));
+    alert(`分析失敗：${error?.message || error}`);
   }
 }
 
-async function analyzeUrls() {
-  applyNaturalLanguage();
-  const urls = normalizeUrls($('urlList').value);
-  if (!urls.length) { alert('請先貼上網址'); return; }
-  const payload = { ...commonPayload(), urls };
-  setStatus('分析網址中...');
-  try {
-    const data = await postJson('/api/analyze', payload);
-    state.results = data.results || [];
-    renderResults(state.results);
-    updateSummary(state.results);
-    setDebug(data.debug || {});
-    setStatus(`完成，共 ${state.results.length} 個結果`);
-  } catch (err) {
-    setStatus('分析失敗');
-    setDebug({ error: err.message || String(err) });
-    alert(`分析失敗：${err.message || err}`);
-  }
+function loadSamples() {
+  const sample = [
+    {
+      url: 'https://www.instagram.com/reel/sample-coffee-1/',
+      platform: 'Instagram',
+      title: 'Blue latte art coffee setup',
+      caption: 'English coffee reel with latte art, grinder, espresso setup and blue background props.',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=800&q=80',
+      source: '瀏覽器收集器',
+      collectedAt: new Date().toISOString()
+    },
+    {
+      url: 'https://www.instagram.com/reel/sample-fashion-2/',
+      platform: 'Instagram',
+      title: 'Neutral outfit styling reel',
+      caption: 'Lookbook styling ideas with bag and shoes on a clean beige set.',
+      thumbnailUrl: 'https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=800&q=80',
+      source: '瀏覽器收集器',
+      collectedAt: new Date().toISOString()
+    }
+  ];
+  $('collectorText').value = JSON.stringify(sample, null, 2);
 }
 
-function loadSample() {
-  $('urlList').value = [
-    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    'https://www.instagram.com/reel/C5k0Example1/',
-    'https://www.tiktok.com/@example/video/7350000000000000000'
+function loadSampleUrls() {
+  $('collectorText').value = [
+    'https://www.instagram.com/reel/Cx123456789/',
+    'https://www.instagram.com/p/CxABCDEFGH/'
   ].join('\n');
 }
 
+function restoreState() {
+  const text = localStorage.getItem('igFinderV4:lastCollectorText');
+  const rawFilters = localStorage.getItem('igFinderV4:lastFilters');
+  if (text) $('collectorText').value = text;
+  if (rawFilters) {
+    try {
+      const filters = JSON.parse(rawFilters);
+      if (filters.query) $('query').value = filters.query;
+      if (filters.language) $('language').value = filters.language;
+      if (filters.color) $('color').value = filters.color;
+      if (filters.products) $('products').value = filters.products;
+      $('strictMode').checked = Boolean(filters.strictMode);
+      $('forceFetch').checked = Boolean(filters.forceFetch);
+      if (Array.isArray(filters.platforms)) {
+        Array.from($('platforms').options).forEach(opt => { opt.selected = filters.platforms.includes(opt.value); });
+      }
+    } catch {}
+  }
+}
+
 $('applyNaturalBtn').addEventListener('click', applyNaturalLanguage);
-$('youtubeSearchBtn').addEventListener('click', runYoutubeSearch);
-$('analyzeBtn').addEventListener('click', analyzeUrls);
-$('sampleBtn').addEventListener('click', loadSample);
-$('exportCsvBtn').addEventListener('click', () => {
-  if (!state.results.length) return alert('未有結果');
-  downloadFile('video-results.csv', toCsv(state.results), 'text/csv;charset=utf-8');
+$('analyzeBtn').addEventListener('click', runAnalyze);
+$('exportCsvBtn').addEventListener('click', exportCsv);
+$('exportJsonBtn').addEventListener('click', exportJson);
+$('exportHtmlBtn').addEventListener('click', exportHtml);
+$('sampleCollectorBtn').addEventListener('click', loadSamples);
+$('sampleUrlBtn').addEventListener('click', loadSampleUrls);
+$('clearBtn').addEventListener('click', () => {
+  $('collectorText').value = '';
+  state.results = [];
+  renderResults([]);
+  updateSummary([]);
+  setDebug('已清空');
+  setStatus('未開始');
 });
-$('exportJsonBtn').addEventListener('click', () => {
-  if (!state.results.length) return alert('未有結果');
-  downloadFile('video-results.json', JSON.stringify(state.results, null, 2), 'application/json;charset=utf-8');
-});
-$('exportHtmlBtn').addEventListener('click', exportHtmlReport);
+
+restoreState();
+renderResults([]);

@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "IG Reel Collector",
+  "version": "1.0.0",
+  "description": "Collect visible Instagram reel/post URLs and metadata as JSON.",
+  "permissions": ["activeTab", "scripting", "clipboardWrite"],
+  "action": {
+    "default_title": "Collect IG items"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}
